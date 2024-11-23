@@ -1,43 +1,69 @@
 import requests
+import logging
 import os
-from dotenv import load_dotenv
 
 class SteamAPI:
     """
-    Handles interactions with the Steam Web API.
-    Requires an API key and Steam ID for authentication.
+    Fetches data from the Steam API for the user's owned games.
     """
 
     def __init__(self):
         """
-        Load Steam API key and Steam ID from the .env file.
+        Initialise the Steam API with the user's API key and Steam ID.
         """
-        load_dotenv()  # Load environment variables from .env
         self.api_key = os.getenv("STEAM_API_KEY")
         self.steam_id = os.getenv("STEAM_ID")
-
-        if not self.api_key or not self.steam_id:
-            print("WARNING: Steam API key or Steam ID is missing. "
-                  "Ensure your .env file is correctly configured.")
+        self.base_url = "https://api.steampowered.com"
+        self.logger = logging.getLogger(__name__)
 
     def fetch_games(self):
         """
-        Fetch the list of owned games for the given Steam ID.
-        :return: List of games with app IDs and names, or an error message
+        Fetch the user's owned games with playtime and names.
         """
-        if not self.api_key or not self.steam_id:
-            print("ERROR: API key or Steam ID not found. Please configure the .env file.")
+        try:
+            # Get basic game data
+            url = f"{self.base_url}/IPlayerService/GetOwnedGames/v0001/"
+            params = {
+                "key": self.api_key,
+                "steamid": self.steam_id,
+                "format": "json",
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+
+            games = response.json().get("response", {}).get("games", [])
+            self.logger.debug(f"Raw API response for games: {games}")
+
+            # Fetch game names for each appid
+            enriched_games = []
+            for game in games:
+                appid = game.get("appid")
+                if appid:
+                    game_name = self.fetch_game_name(appid)
+                    if game_name:
+                        enriched_games.append({"name": game_name, **game})
+                    else:
+                        self.logger.warning(f"Could not fetch name for appid: {appid}")
+
+            return enriched_games
+
+        except Exception as e:
+            self.logger.error(f"Error fetching games from Steam: {e}")
             return []
 
-        url = (
-            f"http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
-            f"?key={self.api_key}&steamid={self.steam_id}&format=json"
-        )
+    def fetch_game_name(self, appid):
+        """
+        Fetch the name of a game using its appid.
+        """
         try:
+            url = f"{self.base_url}/ISteamApps/GetAppList/v2/"
             response = requests.get(url)
-            response.raise_for_status()  # Raise an error for bad HTTP status codes
-            games = response.json().get("response", {}).get("games", [])
-            return [{"app_id": game["appid"], "name": game["name"]} for game in games]
-        except requests.exceptions.RequestException as e:
-            print(f"ERROR: Failed to fetch games. {e}")
-            return []
+            response.raise_for_status()
+
+            app_list = response.json().get("applist", {}).get("apps", [])
+            game = next((app for app in app_list if app["appid"] == appid), None)
+            return game["name"] if game else None
+
+        except Exception as e:
+            self.logger.error(f"Error fetching name for appid {appid}: {e}")
+            return None

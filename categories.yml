@@ -1,0 +1,7 @@
+categories:
+  Quick Bites (<2h): [0, 2]
+  Short (2-5h): [2, 5]
+  Medium (5-15h): [5, 15]
+  Long (15-40h): [15, 40]
+  Epic (>40h): [40, inf]
+  Multiplayer/Endless: []
