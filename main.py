@@ -28,7 +28,7 @@ def main():
 
     # Initialise categoriser and APIs
     categoriser = GameCategoriser(verbose=verbose)
-    steam_api = SteamAPI()
+    steam_api = SteamAPI(verbose=verbose)
     hltb_api = HowLongToBeatAPI()
 
     # Fetch games
