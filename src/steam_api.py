@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 
+
 class SteamAPI:
     """
     Fetches data from the Steam API for the user's owned games.
@@ -28,7 +29,6 @@ class SteamAPI:
         # Define the cache folder path
         self.cache_dir = Path.home() / "Documents" / "Steam Games Sorter" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-
 
     def _load_cache(self, filename):
         """
@@ -56,54 +56,59 @@ class SteamAPI:
         self.logger.debug(f"Data cached in {cache_file}")
 
     def fetch_games(self):
+        """
+        Fetch owned games and their metadata.
+        """
         try:
             cache_filename = f"{self.steam_id}_games.json"
             cached_games = self._load_cache(cache_filename)
             if cached_games:
-                self.logger.debug(f"Using cached data: {cached_games}")
+                self.logger.debug(f"Using cached games data.")
                 return cached_games
 
+            # Fetch games from Steam API
             url = f"{self.base_url}/IPlayerService/GetOwnedGames/v0001/"
             params = {"key": self.api_key, "steamid": self.steam_id, "format": "json"}
             response = requests.get(url, params=params)
             response.raise_for_status()
-            games = response.json().get("response", {}).get("games", [])
-            enriched_games = []
-            for game in games:
-                appid = game.get("appid")
-                game_name = self.fetch_game_name(appid) or "Unnamed Game"
-                enriched_games.append({"name": game_name, **game})
 
+            games = response.json().get("response", {}).get("games", [])
+            app_ids = [game["appid"] for game in games]
+
+            # Fetch app list (game names) and enrich data
+            app_list = self.fetch_app_list()
+            enriched_games = [
+                {"name": app_list.get(game["appid"], "Unnamed Game"), **game}
+                for game in games
+            ]
+
+            # Cache the enriched games
             self._save_cache(cache_filename, enriched_games)
-            self.logger.debug(f"Enriched games: {enriched_games}")
             return enriched_games
         except Exception as e:
             self.logger.error(f"Error fetching games from Steam: {e}")
             return []
 
-    def fetch_game_name(self, appid):
+    def fetch_app_list(self):
         """
-        Fetch the name of a game using its appid.
+        Fetch or load app list (game names) and cache it.
         """
         try:
-            # Attempt to load app list from cache
             cache_filename = "applist.json"
             cached_app_list = self._load_cache(cache_filename)
             if cached_app_list:
-                game = next((app for app in cached_app_list if app["appid"] == appid), None)
-                return game["name"] if game else None
+                self.logger.debug(f"Using cached app list.")
+                return {app["appid"]: app["name"] for app in cached_app_list}
 
-            # Fetch from Steam API
+            # Fetch full app list from Steam API
             url = f"{self.base_url}/ISteamApps/GetAppList/v2/"
             response = requests.get(url)
             response.raise_for_status()
 
             app_list = response.json().get("applist", {}).get("apps", [])
             self._save_cache(cache_filename, app_list)
-
-            game = next((app for app in app_list if app["appid"] == appid), None)
-            return game["name"] if game else None
-
+            return {app["appid"]: app["name"] for app in app_list}
         except Exception as e:
-            self.logger.error(f"Error fetching name for appid {appid}: {e}")
-            return None
+            self.logger.error(f"Error fetching app list: {e}")
+            return {}
+
